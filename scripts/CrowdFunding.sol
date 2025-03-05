@@ -8,6 +8,8 @@ contract CrowdFunding {
     uint256 public deadline;
     address public owner;
 
+    enum CampaignState{Active,Successful,Failed}
+    CampaignState public state;
     struct Tier{
         string name;
         uint256 amount;
@@ -18,24 +20,39 @@ contract CrowdFunding {
         require(msg.sender == owner,"not the owner");
         _;
     }
+    modifier  campaignOpen(){
+        require(state == CampaignState.Active,"Campaign is not active");
+        _;
+    }
     constructor(
         string memory _name,
         string memory _description,
         uint256 _goal,
-        uint256 _durationInDays 
+        uint256 _durationInDays
     ) {
         name = _name;
         description=_description;
         goal=_goal;
         deadline = block.timestamp + (_durationInDays * 1 days);
         owner = msg.sender;
+        state = CampaignState.Active;
     }
-     
-    function fund(uint256 _tierIndex) public payable {
-        require(block.timestamp < deadline, "campaign has ended");
+    function checkAndUpdateCampaignState() internal {
+        if (state == CampaignState.Active){
+            if (block.timestamp >= deadline){
+                state = address(this).balance >= goal ? CampaignState.Successful : CampaignState.Failed;}
+            else {
+                state = address(this).balance >= goal ? CampaignState.Successful : CampaignState.Active;
+        }
+        }
+        
+    }
+    function fund(uint256 _tierIndex) public payable campaignOpen {
+        
         require(_tierIndex < tiers.length,"Invalid tier");
         require(msg.value == tiers[_tierIndex].amount,"incorrect amount");
         tiers[_tierIndex].backers ++;
+        checkAndUpdateCampaignState();
 
     } 
     function addTier(string memory _name,uint256 _amount) public onlyOwner {
@@ -51,8 +68,8 @@ contract CrowdFunding {
     }
     function withdraw() public onlyOwner {
         //require(msg.sender == owner,"only the owner can withdraw.");
-        require(address(this).balance >= goal,"Goal had not been reached.");
-    
+        checkAndUpdateCampaignState();
+        require(state == CampaignState.Successful,"Campaign is not succeful");
         uint256 balance = address(this).balance;
         require(balance > 0,"no balance to witdraw");
         payable (owner).transfer(balance); 
